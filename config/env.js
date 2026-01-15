@@ -15,5 +15,11 @@ module.exports = {
     password: process.env.GMAIL_APP_PASSWORD,
     to: process.env.EMAIL_TO || process.env.GMAIL_USER,
     cc: process.env.EMAIL_CC || null // Comma-separated list of CC recipients
+  },
+  scheduler: {
+    enabled: process.env.SCHEDULER_ENABLED === 'true' || false,
+    channelId: process.env.SCHEDULER_CHANNEL_ID || null,
+    time: process.env.SCHEDULER_TIME || '20:00', // Default 8 PM in HH:MM format (24-hour)
+    timezone: process.env.SCHEDULER_TIMEZONE || 'Asia/Kolkata' // IST timezone
   }
 };

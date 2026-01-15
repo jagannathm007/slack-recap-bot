@@ -38,6 +38,7 @@ Ideal for:
 - 📋 **Channel Management** - List all available channels (public & private)
 - 🤖 **AI Summarization** - Intelligent message summarization using Google Gemini
 - 📧 **Email Delivery** - Automatic email delivery with HTML formatting
+- ⏰ **Automated Daily Reports** - Cron job scheduler for daily email reports at specified time
 - 👥 **Multi-recipient Support** - Send to multiple recipients with CC support
 - 🚀 **RESTful API** - Simple, clean REST endpoints
 - ⚡ **Error Handling** - Comprehensive error handling with helpful messages
@@ -51,6 +52,7 @@ Ideal for:
 - **Slack SDK**: @slack/web-api
 - **AI Service**: Google Generative AI (Gemini)
 - **Email Service**: Nodemailer (Gmail)
+- **Scheduler**: node-cron (for automated daily reports)
 - **Environment**: dotenv
 - **Development**: Nodemon
 
@@ -130,6 +132,12 @@ EMAIL_CC=cc1@example.com,cc2@example.com  # Optional: comma-separated
 
 # Company/Organization Name (Optional - for email subject)
 COMPANY_NAME=Your Company Name  # Optional: used in email subject
+
+# Scheduler Configuration (Optional - for automated daily reports)
+SCHEDULER_ENABLED=true  # Set to 'true' to enable daily automated reports
+SCHEDULER_CHANNEL_ID=C1234567890  # Channel ID to monitor for daily reports
+SCHEDULER_TIME=20:00  # Time in HH:MM format (24-hour), default: 20:00 (8 PM)
+SCHEDULER_TIMEZONE=Asia/Kolkata  # Timezone, default: Asia/Kolkata (IST)
 
 # Server Configuration (Optional)
 PORT=3000  # Optional: defaults to 3000
@@ -261,6 +269,73 @@ curl "http://localhost:3000/api/channels"
 }
 ```
 
+## ⏰ Automated Daily Reports (Cron Job)
+
+The application includes a built-in scheduler that automatically sends daily email reports at a specified time.
+
+### How It Works
+
+1. **Enable the Scheduler**: Set `SCHEDULER_ENABLED=true` in your `.env` file
+2. **Configure Channel**: Set `SCHEDULER_CHANNEL_ID` to the channel you want to monitor
+3. **Set Time**: Configure `SCHEDULER_TIME` (default: `20:00` for 8 PM IST)
+4. **Start Server**: The scheduler starts automatically when the server starts
+
+### Configuration
+
+Add these to your `.env` file:
+
+```env
+# Enable automated daily reports
+SCHEDULER_ENABLED=true
+
+# Channel ID to monitor (get from /api/channels endpoint)
+SCHEDULER_CHANNEL_ID=C1234567890
+
+# Time in HH:MM format (24-hour), default: 20:00 (8 PM)
+SCHEDULER_TIME=20:00
+
+# Timezone (default: Asia/Kolkata for IST)
+SCHEDULER_TIMEZONE=Asia/Kolkata
+```
+
+### How It Works
+
+- The scheduler runs daily at the specified time (default: 8 PM IST)
+- It automatically fetches messages from the configured channel for **today's date** (IST)
+- Generates an AI summary using Gemini (if configured)
+- Sends the summary via email (if Gmail is configured)
+- Logs all activities to the console
+
+### Important Notes
+
+- **Date Calculation**: The scheduler uses IST (Indian Standard Time) to determine "today's date"
+- **Timezone Support**: You can change the timezone using `SCHEDULER_TIMEZONE` (e.g., `America/New_York`, `Europe/London`)
+- **Server Must Be Running**: The scheduler only works when the server is running
+- **Error Handling**: If a scheduled job fails, it logs the error but continues for the next day
+- **No Duplicate Execution**: If a job is still running when the next scheduled time arrives, it will skip that execution
+
+### Example Schedule Times
+
+```env
+# 8 PM IST (default)
+SCHEDULER_TIME=20:00
+SCHEDULER_TIMEZONE=Asia/Kolkata
+
+# 9 AM EST
+SCHEDULER_TIME=09:00
+SCHEDULER_TIMEZONE=America/New_York
+
+# 6 PM GMT
+SCHEDULER_TIME=18:00
+SCHEDULER_TIMEZONE=Europe/London
+```
+
+### Disabling the Scheduler
+
+To disable automated reports, either:
+- Set `SCHEDULER_ENABLED=false` in `.env`, or
+- Remove `SCHEDULER_ENABLED` from `.env` (defaults to disabled)
+
 ## 💡 Usage Examples
 
 ### Basic Workflow
@@ -327,7 +402,8 @@ slack-recap/
 ├── services/
 │   ├── slackService.js     # Slack API integration
 │   ├── geminiService.js    # Gemini AI integration
-│   └── emailService.js     # Email delivery service
+│   ├── emailService.js     # Email delivery service
+│   └── schedulerService.js # Automated daily report scheduler
 ├── utils/
 │   └── validators.js       # Input validation utilities
 ├── server.js               # Express server setup
