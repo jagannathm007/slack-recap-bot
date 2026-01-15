@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const moment = require('moment-timezone');
 const config = require('../config/env');
 const slackService = require('./slackService');
 const geminiService = require('./geminiService');
@@ -15,12 +16,11 @@ class SchedulerService {
   }
 
   /**
-   * Convert IST time to cron expression
+   * Convert time to cron expression
    * @param {string} time - Time in HH:MM format (24-hour)
-   * @param {string} timezone - Timezone (default: Asia/Kolkata)
    * @returns {string} - Cron expression
    */
-  getCronExpression(time, timezone = 'Asia/Kolkata') {
+  getCronExpression(time) {
     // Parse time string (HH:MM)
     const [hours, minutes] = time.split(':').map(Number);
     
@@ -39,17 +39,9 @@ class SchedulerService {
    * @returns {string} - Date string
    */
   getTodayDateIST() {
-    // Get current date in IST
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
-    const istTime = new Date(now.getTime() + istOffset);
-    
-    // Format as YYYY-MM-DD
-    const year = istTime.getUTCFullYear();
-    const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(istTime.getUTCDate()).padStart(2, '0');
-    
-    return `${year}-${month}-${day}`;
+    // Use moment-timezone to get current date in IST
+    const timezone = config.scheduler.timezone || 'Asia/Kolkata';
+    return moment().tz(timezone).format('YYYY-MM-DD');
   }
 
   /**
@@ -64,8 +56,11 @@ class SchedulerService {
     this.isRunning = true;
     const date = this.getTodayDateIST();
     const channelId = config.scheduler.channelId;
+    const timezone = config.scheduler.timezone || 'Asia/Kolkata';
 
-    console.log(`[Scheduler] Starting daily report for ${date} at ${new Date().toISOString()}`);
+    // Get current time in IST for logging
+    const currentTimeIST = moment().tz(timezone).format('YYYY-MM-DD HH:mm:ss');
+    console.log(`[Scheduler] Starting daily report for ${date} at ${currentTimeIST} ${timezone}`);
 
     try {
       // Validate configuration
@@ -151,28 +146,40 @@ class SchedulerService {
     }
 
     try {
-      const cronExpression = this.getCronExpression(
-        config.scheduler.time,
-        config.scheduler.timezone
-      );
+      const timezone = config.scheduler.timezone || 'Asia/Kolkata';
+      const time = config.scheduler.time || '20:00';
+      const cronExpression = this.getCronExpression(time);
 
       console.log(`[Scheduler] Starting daily scheduler...`);
-      console.log(`[Scheduler] Schedule: Daily at ${config.scheduler.time} ${config.scheduler.timezone}`);
+      console.log(`[Scheduler] Schedule: Daily at ${time} ${timezone}`);
       console.log(`[Scheduler] Channel ID: ${config.scheduler.channelId}`);
       console.log(`[Scheduler] Cron expression: ${cronExpression}`);
 
-      // Create cron job
-      this.job = cron.schedule(cronExpression, async () => {
+      // Convert IST time to UTC for cron (since node-cron timezone support may not work in all environments)
+      // If scheduled time is 20:00 IST, we need to calculate what time that is in UTC
+      const today = moment().tz(timezone).format('YYYY-MM-DD');
+      const scheduledTimeIST = moment.tz(`${today} ${time}`, 'YYYY-MM-DD HH:mm', timezone);
+      const scheduledTimeUTC = scheduledTimeIST.utc();
+      
+      const utcHours = scheduledTimeUTC.hours();
+      const utcMinutes = scheduledTimeUTC.minutes();
+      const utcCronExpression = `${utcMinutes} ${utcHours} * * *`;
+
+      console.log(`[Scheduler] IST Time: ${time} ${timezone}`);
+      console.log(`[Scheduler] UTC Time: ${utcHours.toString().padStart(2, '0')}:${utcMinutes.toString().padStart(2, '0')} UTC`);
+      console.log(`[Scheduler] Using UTC cron expression: ${utcCronExpression}`);
+
+      // Create cron job using UTC time (more reliable across deployments)
+      this.job = cron.schedule(utcCronExpression, async () => {
         await this.executeDailyReport();
       }, {
         scheduled: true,
-        timezone: config.scheduler.timezone
+        timezone: 'UTC' // Use UTC explicitly
       });
 
       console.log('[Scheduler] Scheduler started successfully!');
-      console.log(`[Scheduler] Next execution will be at ${config.scheduler.time} ${config.scheduler.timezone} tomorrow.`);
-
-      // Optional: Log next execution time
+      
+      // Log next execution time in IST
       this.logNextExecution();
 
     } catch (error) {
@@ -211,19 +218,29 @@ class SchedulerService {
    */
   logNextExecution() {
     try {
-      const [hours, minutes] = config.scheduler.time.split(':').map(Number);
-      const now = new Date();
-      const nextExecution = new Date();
-      nextExecution.setHours(hours, minutes, 0, 0);
+      const timezone = config.scheduler.timezone || 'Asia/Kolkata';
+      const time = config.scheduler.time || '20:00';
+      
+      // Parse the scheduled time
+      const [hours, minutes] = time.split(':').map(Number);
+      
+      // Get current time in IST
+      const nowIST = moment().tz(timezone);
+      
+      // Create next execution time in IST
+      let nextExecutionIST = moment.tz(timezone).hour(hours).minute(minutes).second(0).millisecond(0);
       
       // If time has passed today, schedule for tomorrow
-      if (nextExecution <= now) {
-        nextExecution.setDate(nextExecution.getDate() + 1);
+      if (nextExecutionIST.isBefore(nowIST) || nextExecutionIST.isSame(nowIST)) {
+        nextExecutionIST.add(1, 'day');
       }
 
-      console.log(`[Scheduler] Next execution scheduled for: ${nextExecution.toLocaleString('en-IN', { timeZone: config.scheduler.timezone })}`);
+      // Format in IST for display
+      const formattedTime = nextExecutionIST.format('DD/M/YYYY, h:mm:ss a');
+      
+      console.log(`[Scheduler] Next execution scheduled for: ${formattedTime} (${timezone})`);
     } catch (error) {
-      // Ignore errors in logging
+      console.error('[Scheduler] Error calculating next execution:', error.message);
     }
   }
 }
